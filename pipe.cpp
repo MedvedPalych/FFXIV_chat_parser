@@ -5,11 +5,11 @@
 
 Pipe::Pipe(): _handle {INVALID_HANDLE_VALUE} {
   
-    //std::string pipeName("\\\\.\\pipe\\deucalion-6448"); //TODO автоопределение процесса средствами винды, а не ручное забивание
+    //std::string pipeName("\\\\.\\pipe\\deucalion-6448"); //TODO Р°РІС‚РѕРѕРїСЂРµРґРµР»РµРЅРёРµ РїСЂРѕС†РµСЃСЃР° СЃСЂРµРґСЃС‚РІР°РјРё РІРёРЅРґС‹, Р° РЅРµ СЂСѓС‡РЅРѕРµ Р·Р°Р±РёРІР°РЅРёРµ
 
     std::string pipeName("\\\\.\\pipe\\deucalion-");
     pipeName += std::to_string(utils::find_FFXIV_PID());
-    while (1) {                             // TODO избавиться от цикла и наладить обработку ошибок
+    while (1) {                             // TODO РёР·Р±Р°РІРёС‚СЊСЃВ¤ РѕС‚ С†РёРєР»Р° Рё РЅР°Р»Р°РґРёС‚СЊ РѕР±СЂР°Р±РѕС‚РєСѓ РѕС€РёР±РѕРє
            _handle = CreateFile(
             pipeName.data(),                // pipe name 
             GENERIC_READ | GENERIC_WRITE,   // read and write access
@@ -31,7 +31,7 @@ Pipe::Pipe(): _handle {INVALID_HANDLE_VALUE} {
             exit(2);
         }
 
-        // Не получилось соединиться с пайпом за 20 секунд (как?) 
+        // РЊРµ РїРѕР»СѓС‡РёР»РѕСЃСЊ СЃРѕРµРґРёРЅРёС‚СЊСЃВ¤ СЃ РїР°Р№РїРѕРј Р·Р° 20 СЃРµРєСѓРЅРґ (РєР°Рє?) 
         if (!WaitNamedPipe(pipeName.data(), 20000)) {
             std::cout << "Could not open pipe: 20 second wait timed out.";
             exit(3);
