@@ -1,16 +1,32 @@
 #include "pipe.h"
 #include "utils.h"
 #include <stdio.h>
+#include <time.h>
 #include <string>
 
-Pipe::Pipe(): _handle {INVALID_HANDLE_VALUE} {
-  
-    //std::string pipeName("\\\\.\\pipe\\deucalion-6448"); //TODO автоопределение процесса средствами винды, а не ручное забивание
+constexpr auto BUFSIZE = 2048;
+
+Pipe::Pipe() : _handle{ INVALID_HANDLE_VALUE } {
 
     std::string pipeName("\\\\.\\pipe\\deucalion-");
+
     pipeName += std::to_string(utils::find_FFXIV_PID());
-    while (1) {                             // TODO избавитьс¤ от цикла и наладить обработку ошибок
-           _handle = CreateFile(
+
+    time_t now;
+    time(&now);
+    struct tm* local = localtime(&now);
+    std::string name = std::to_string(local->tm_mday) + std::to_string(local->tm_mon + 1) +
+        std::to_string(local->tm_year + 1900) + "_" + std::to_string(local->tm_hour)
+        + std::to_string(local->tm_min) + std::to_string(local->tm_sec) + ".txt";
+    fout.open(name);
+    if (!fout.is_open()) {
+        std::cout << "Failed to create file " << name << std::endl;
+    }
+
+    std::cout << "Connecting @ " <<  pipeName << "\n";
+
+    for (;;) {
+        _handle = CreateFile(
             pipeName.data(),                // pipe name 
             GENERIC_READ | GENERIC_WRITE,   // read and write access
             0,                              // no sharing 
@@ -20,42 +36,46 @@ Pipe::Pipe(): _handle {INVALID_HANDLE_VALUE} {
             NULL);                          // no template file 
 
         if (_handle == INVALID_HANDLE_VALUE) {
-            exit(1);
-        }
-
-        if (_handle != INVALID_HANDLE_VALUE)
+            std::abort();
+        } else {
             break;
+        }
 
         if (GetLastError() != ERROR_PIPE_BUSY) {
             std::cout << "Could not open pipe. GLE=" << GetLastError() << "\n";
-            exit(2);
+            std::abort();
         }
 
-        // Ќе получилось соединитьс¤ с пайпом за 20 секунд (как?) 
         if (!WaitNamedPipe(pipeName.data(), 20000)) {
             std::cout << "Could not open pipe: 20 second wait timed out.";
-            exit(3);
+            std::abort();
         }
-    } 
+    }
+}
+
+Pipe::~Pipe() {
+    fout.close();
 }
 
 Message Pipe::read() {
-    uint8_t  buf[512] {};
+    uint8_t  buf[BUFSIZE] {};
     uint32_t bytes_read = 0;
 
-    // Read from the pipe. 
     BOOL fSuccess = ReadFile(
-        _handle,             // pipe handle 
-        buf,                 // buffer to receive reply 
-        512,                 // size of buffer 
-        LPDWORD(&bytes_read),// number of bytes read 
-        NULL);               // not overlapped 
+        _handle,              // pipe handle 
+        buf,                  // buffer to receive reply 
+        BUFSIZE,              // size of buffer 
+        LPDWORD(&bytes_read), // number of bytes read 
+        NULL);                // not overlapped 
 
-    if (!fSuccess && GetLastError() != ERROR_MORE_DATA)
+    if (!fSuccess && GetLastError() != ERROR_MORE_DATA) {
         exit(7);
-    std::cout << "\nRead " << bytes_read << " bytes\n";
+    }
+       
+    std::cout << bytes_read << " bytes read.\n";
 
-    Message message {buf, bytes_read};
+    std::vector<uint8_t> received {&(buf[0]), &(buf[0]) + bytes_read};
+    Message message {received};
 
     return message;
 }
@@ -66,39 +86,51 @@ void Pipe::changeMode(DWORD Mode) {
       &Mode,     // new pipe mode 
       NULL,      // don't set maximum bytes 
       NULL);     // don't set maximum time 
-    if (!fSuccess)
-    {
+
+    if (!fSuccess) {
         std::cout<< "SetNamedPipeHandleState failed. GLE=" << GetLastError() << "\n";
-        exit(5);
+        std::abort();
     }
 }
 
-void Pipe::write(Message message) {
+void Pipe::write(Message sMsg) {
     uint32_t bytes_written = 0;
-    std::cout << "Sending " << message.length << " byte message:";
-    for (uint32_t i = 0; i < message.length; ++i) {
-        std::cout << (unsigned short)message.message[i] << " ";
+
+    std::cout << "Sending " << sMsg.message.size() << " byte message:" << std::endl;
+
+    for (uint8_t element: sMsg.message) {
+        std::cout << (unsigned short)element << " ";
     }
     std::cout << std::endl;
 
     BOOL fSuccess = WriteFile(
         _handle,                 // pipe handle 
-        message.message,         // message 
-        message.length,          // message length 
+        sMsg.message.data(), // message 
+        sMsg.message.size(),  // message length 
         LPDWORD(&bytes_written), // bytes written 
         NULL);                   // not overlapped 
 
     if (!fSuccess) {
-        std::cout << "WriteFile to pipe failed. GLE=" << GetLastError() << "\n";
-        exit(6);
+        std::cout << "WriteFile to pipe failed. GLE=" << GetLastError() << std::endl;
+        std::abort();
     }
     
-    std::cout << "Message sent to server\n";
+    std::cout << "Message sent to server" << std::endl;
+}
+
+void Pipe::printMessageToFile(Message message) {
+    if (fout.is_open()) {
+        fout << message.asString() << std::endl;
+    }
+    else {
+        std::cerr << "Couldn't write message to file" << std::endl;
+    }
 }
 
 void Pipe::loop() {
-  for (;;) {
-      Message message = read();
-      message.print();
-  }
+    for (;;) {
+        Message message = read();
+        message.printString();
+        printMessageToFile(message);
+    }
 }
